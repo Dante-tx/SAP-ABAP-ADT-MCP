@@ -11,9 +11,9 @@ from urllib.parse import quote, urljoin
 
 import httpx
 
-from app.auth.browser_sso import BrowserSession
-from app.config import AbapDevConfig
-from app.errors import AuthorizationError, ConfigError, SapBackendError, ValidationError
+from sap_mcp.auth.browser_sso import BrowserSession
+from sap_mcp.config import AbapDevConfig
+from sap_mcp.errors import AuthorizationError, ConfigError, SapBackendError, ValidationError
 
 
 ADT_ACCEPT = "application/atom+xml, application/xml, text/plain, */*"
@@ -624,6 +624,11 @@ class AdtConnector:
             raise AuthorizationError(
                 f"ADT session is not authorized or has expired. SAP returned {response.status_code}; run abap_adt_login again."
             )
+        if response.status_code in {301, 302, 303, 307, 308}:
+            location = response.headers.get("location", "SSO login")
+            raise AuthorizationError(
+                f"ADT session is not authorized or has expired. SAP redirected to {location}; run abap_adt_login again."
+            )
         if response.status_code >= 400:
             raise SapBackendError(f"ADT error {response.status_code}: {response.text[:500]}")
         return AdtResponse(
@@ -642,6 +647,8 @@ class AdtConnector:
             )
         if response.status_code in {401, 403}:
             raise AuthorizationError("Cannot fetch ADT CSRF token; SSO session is not authorized or has expired")
+        if response.status_code in {301, 302, 303, 307, 308}:
+            raise AuthorizationError("Cannot fetch ADT CSRF token; SAP redirected to SSO login")
         token = response.headers.get("x-csrf-token")
         if not token:
             raise SapBackendError("ADT did not return an X-CSRF-Token")

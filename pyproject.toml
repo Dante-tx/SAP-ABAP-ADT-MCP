@@ -23,10 +23,11 @@ test = [
 ]
 
 [project.scripts]
-sap-mcp = "app.server:main"
+sap-mcp = "sap_mcp.server:main"
+sap-mcp-stdio = "sap_mcp.stdio_server:main"
 
 [tool.setuptools.packages.find]
-include = ["app*"]
+include = ["sap_mcp*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

@@ -1,4 +1,4 @@
-from app.server import app
+from sap_mcp.server import app
 
 
 def test_server_exposes_health_and_mcp_routes():

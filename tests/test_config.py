@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from app.config import load_config
+from sap_mcp.config import load_config
 
 
 def test_load_example_config():

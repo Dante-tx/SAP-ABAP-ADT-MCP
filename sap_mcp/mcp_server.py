@@ -4,20 +4,20 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from app.config import AppConfig, get_config
-from app.security import SYSTEM_USER
-from app.services.abap_dev_gateway import AbapDevGateway
+from sap_mcp.config import AppConfig, get_config
+from sap_mcp.security import SYSTEM_USER
+from sap_mcp.services.abap_dev_gateway import AbapDevGateway
 
 
-def create_mcp(config: AppConfig | None = None) -> FastMCP:
+def create_mcp(config: AppConfig | None = None, *, stateless_http: bool = True) -> FastMCP:
     config = config or get_config()
     abap_gateway = AbapDevGateway(config.abap_dev)
-    mcp = FastMCP(config.server.name, stateless_http=True, json_response=True)
+    mcp = FastMCP(config.server.name, stateless_http=stateless_http, json_response=True)
 
     @mcp.tool()
-    def abap_adt_login() -> dict[str, Any]:
-        """Open the ABAP ADT SSO login URL in the local browser."""
-        return abap_gateway.login(SYSTEM_USER)
+    async def abap_adt_login() -> dict[str, Any]:
+        """Reuse a valid local SSO session or open the ABAP ADT SSO login URL."""
+        return await abap_gateway.login(SYSTEM_USER)
 
     @mcp.tool()
     def abap_save_sso_session(cookies: dict[str, str], headers: dict[str, str] | None = None) -> dict[str, Any]:

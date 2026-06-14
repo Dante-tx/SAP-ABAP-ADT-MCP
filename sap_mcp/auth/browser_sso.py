@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from app.config import AbapDevConfig
-from app.errors import ConfigError, ValidationError
+from sap_mcp.config import AbapDevConfig
+from sap_mcp.errors import AuthorizationError, ConfigError, ValidationError
 
 
 @dataclass(frozen=True)
@@ -39,10 +39,37 @@ class BrowserSsoSessionManager:
             f"scenario={quote(self.config.reentrance_scenario, safe='')}&redirect-url={redirect_url}&_={nonce}"
         )
 
-    def open_login(self) -> dict[str, Any]:
+    async def login(self) -> dict[str, Any]:
+        try:
+            session = self.load_session()
+        except ConfigError:
+            return self.open_login("missing_or_invalid_session")
+
+        try:
+            discovery = await self.validate_session(session)
+        except (AuthorizationError, ConfigError):
+            return self.open_login("expired_or_rejected_session")
+
+        return {
+            **discovery,
+            "reused_session": True,
+            "authentication_required": False,
+            "session_path": str(self.config.session_path),
+        }
+
+    async def validate_session(self, session: BrowserSession | None = None) -> dict[str, Any]:
+        from sap_mcp.connectors.adt import AdtConnector
+
+        connector = AdtConnector(self.config, session or self.load_session())
+        return await connector.discovery()
+
+    def open_login(self, reason: str | None = None) -> dict[str, Any]:
         url = self.login_url()
         webbrowser.open(url)
         return {
+            "authentication_required": True,
+            "reused_session": False,
+            "reason": reason or "manual_login",
             "login_url": url,
             "session_path": str(self.config.session_path),
             "next_step": "Complete SSO in the browser. The local callback will capture the ADT login result.",
@@ -94,7 +121,10 @@ class BrowserSsoSessionManager:
         path = self.config.session_path
         if not path.exists():
             raise ConfigError("No local SSO session found. Run abap_adt_login and import cookies first.")
-        data = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ConfigError(f"Local SSO session file is not readable JSON: {path}") from exc
         cookies = data.get("cookies") or {}
         reentrance = data.get("reentrance") or {}
         if not isinstance(cookies, dict):
@@ -115,6 +145,7 @@ class BrowserSsoSessionManager:
         )
 
     def _write_session(self, session: BrowserSession) -> None:
+        self.config.session_path.parent.mkdir(parents=True, exist_ok=True)
         self.config.session_path.write_text(
             json.dumps(
                 {
@@ -133,11 +164,4 @@ class BrowserSsoSessionManager:
     def system_url(self) -> str:
         if self.config.system_url:
             return self.config.system_url.rstrip("/")
-        path = self.config.service_key_path
-        if not path.exists():
-            raise ConfigError(f"ABAP service key file not found: {path}")
-        service_key = json.loads(path.read_text(encoding="utf-8-sig"))
-        url = service_key.get("url") or service_key.get("endpoints", {}).get("abap")
-        if not url:
-            raise ConfigError("ABAP service key does not contain url or endpoints.abap")
-        return str(url).rstrip("/")
+        raise ConfigError("ABAP system URL is not configured. Set abap_dev.system_url in sap-mcp.yaml.")

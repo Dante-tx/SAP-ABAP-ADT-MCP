@@ -24,11 +24,35 @@ python -m venv .venv
 .\.venv\Scripts\pip install -e ".[test]"
 ```
 
+## Project Layout
+
+- `sap_mcp/` - MCP server source code.
+  - `server.py` - HTTP transport entrypoint.
+  - `stdio_server.py` - STDIO transport entrypoint for IDEs such as Kiro.
+  - `callback.py` - shared browser SSO callback routes.
+  - `auth/`, `connectors/`, `services/` - authentication, ADT HTTP calls, and tool orchestration.
+- `tests/` - pytest test suite only; not needed at runtime.
+- `sap-mcp.example.yaml` - safe example config.
+- `sap-mcp.yaml` - local private config; stores `abap_dev.system_url` and write permissions.
+- `.sap-mcp-session.json` - local browser SSO session file; do not commit or share.
+- `.venv/`, `.pytest_cache/`, `__pycache__/`, `*.egg-info/` - generated local artifacts; safe to delete and recreate.
+
 ## HTTP Endpoints
 
 - `/mcp`
 - `/healthz`
 - `/logon/success`
+
+## STDIO Transport
+
+For IDEs that launch MCP servers through STDIO, such as Kiro:
+
+```powershell
+python -m sap_mcp.stdio_server
+```
+
+The STDIO server also starts a small local callback listener for browser SSO at the configured
+`abap_dev.callback_url`, so `abap_adt_login` can complete without running the HTTP MCP server.
 
 ## Supported MCP Tools
 
@@ -81,7 +105,6 @@ abap_dev:
   callback_url: "http://localhost:8000/logon/success"
   reentrance_endpoint: "/sap/bc/sec/reentrance"
   reentrance_scenario: "FTO1"
-  service_key_path: "service-key.json"
   session_path: ".sap-mcp-session.json"
   readable_packages:
     - "*"
@@ -94,30 +117,15 @@ abap_dev:
 
 Security notes:
 
-- `service-key.json` is only used to discover the ABAP system URL if `system_url` is not set.
-- Do not distribute `.sap-mcp-session.json`, `service-key.json`, `.env`, or your real `sap-mcp.yaml`.
+- Configure the ABAP system directly in `abap_dev.system_url`.
+- Do not distribute `.sap-mcp-session.json`, `.env`, or your real `sap-mcp.yaml`.
 - Prefer `readable_packages: ["*"]` with a narrow `allowed_packages` list for production use.
-
-## Service Key Source
-
-When `abap_dev.system_url` is not set, the server can read the ABAP system URL from `service-key.json`.
-
-Typical source in SAP BTP cockpit:
-
-1. Open `Instances and Subscriptions`.
-2. Locate your ABAP environment instance.
-3. Click the credential entry shown as `1 key value`.
-4. In the popup, click `Download` and save the downloaded service key JSON locally as `service-key.json`.
-
-Use the entry below as the navigation reference for where to start the download:
-
-![Service key entry](assets/service-key-entry.png)
 
 ## Start
 
 ```powershell
 $env:SAP_MCP_AUTH_TOKENS="dev-token"
-uvicorn app.server:app --host 127.0.0.1 --port 8000
+uvicorn sap_mcp.server:app --host 127.0.0.1 --port 8000
 ```
 
 ## ADT Login Flow

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -32,7 +31,6 @@ class AbapDevConfig(BaseModel):
     callback_url: str = "http://localhost:8000/logon/success"
     reentrance_endpoint: str = "/sap/bc/sec/reentrance"
     reentrance_scenario: str = "FTO1"
-    service_key_path: Path = Path("service-key.json")
     session_path: Path = Path(".sap-mcp-session.json")
     readable_packages: list[str] = Field(default_factory=lambda: ["*"])
     allowed_packages: list[str] = Field(default_factory=lambda: ["Z*"])
@@ -59,6 +57,7 @@ def load_config(path: Path | None = None) -> AppConfig:
     if config_path.exists():
         data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     config = AppConfig.model_validate(data)
+    _resolve_abap_paths(config, config_path)
 
     env_tokens = _split_env_tokens(settings.auth_tokens)
     if env_tokens:
@@ -66,12 +65,12 @@ def load_config(path: Path | None = None) -> AppConfig:
     return config
 
 
+def _resolve_abap_paths(config: AppConfig, config_path: Path) -> None:
+    base_dir = config_path.resolve().parent
+    if not config.abap_dev.session_path.is_absolute():
+        config.abap_dev.session_path = base_dir / config.abap_dev.session_path
+
+
 @lru_cache(maxsize=1)
 def get_config() -> AppConfig:
     return load_config()
-
-
-def env_value(name: str | None, default: str | None = None) -> str | None:
-    if not name:
-        return default
-    return os.getenv(name, default)

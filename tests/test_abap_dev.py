@@ -4,24 +4,31 @@ import pytest
 import respx
 from httpx import Response
 
-from app.auth.browser_sso import BrowserSsoSessionManager
-from app.auth.browser_sso import BrowserSession
-from app.config import AbapDevConfig, load_config
-from app.connectors.adt import AdtConnector
-from app.errors import AuthorizationError, ValidationError
-from app.mcp_server import create_mcp
+from sap_mcp.auth.browser_sso import BrowserSsoSessionManager
+from sap_mcp.auth.browser_sso import BrowserSession
+from sap_mcp.config import AbapDevConfig, load_config
+from sap_mcp.connectors.adt import AdtConnector
+from sap_mcp.errors import AuthorizationError, ConfigError, ValidationError
+from sap_mcp.mcp_server import create_mcp
+from sap_mcp.security import SYSTEM_USER
+from sap_mcp.services.abap_dev_gateway import AbapDevGateway
 
 
-def test_browser_sso_session_uses_service_key_url(tmp_path):
-    service_key = tmp_path / "service-key.json"
-    service_key.write_text('{"url": "https://example.abap.local"}', encoding="utf-8")
-    config = AbapDevConfig(service_key_path=service_key, session_path=tmp_path / "session.json")
+def test_browser_sso_session_uses_configured_system_url(tmp_path):
+    config = AbapDevConfig(system_url="https://example.abap.local", session_path=tmp_path / "session.json")
 
     manager = BrowserSsoSessionManager(config)
 
     assert manager.login_url().startswith("https://example.abap-web.local/sap/bc/sec/reentrance")
     assert "redirect-url=http%3A%2F%2Flocalhost%3A8000%2Flogon%2Fsuccess" in manager.login_url()
     assert "scenario=FTO1" in manager.login_url()
+
+
+def test_browser_sso_session_requires_system_url(tmp_path):
+    config = AbapDevConfig(session_path=tmp_path / "session.json")
+
+    with pytest.raises(ConfigError, match="abap_dev.system_url"):
+        BrowserSsoSessionManager(config).login_url()
 
 
 def test_browser_sso_session_save_and_load(tmp_path):
@@ -57,6 +64,67 @@ def test_browser_sso_session_saves_raw_cookie_header(tmp_path):
 
     assert result["cookie_count"] == 2
     assert session.cookies == {"A": "1", "B": "two"}
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_adt_login_reuses_valid_saved_session(tmp_path, monkeypatch):
+    config = AbapDevConfig(system_url="https://example.abap.local", session_path=tmp_path / "session.json")
+    BrowserSsoSessionManager(config).save_session({"SESSION": "abc"})
+    opened: list[str] = []
+    monkeypatch.setattr("webbrowser.open", opened.append)
+    respx.get("https://example.abap.local/sap/bc/adt/discovery").mock(
+        return_value=Response(200, text="<service />", headers={"content-type": "application/xml"})
+    )
+
+    result = await AbapDevGateway(config).login(SYSTEM_USER)
+
+    assert result["connected"] is True
+    assert result["reused_session"] is True
+    assert result["authentication_required"] is False
+    assert opened == []
+
+
+@pytest.mark.asyncio
+async def test_adt_login_opens_sso_when_session_missing(tmp_path, monkeypatch):
+    config = AbapDevConfig(system_url="https://example.abap.local", session_path=tmp_path / "session.json")
+    opened: list[str] = []
+    monkeypatch.setattr("webbrowser.open", opened.append)
+
+    result = await AbapDevGateway(config).login(SYSTEM_USER)
+
+    assert result["authentication_required"] is True
+    assert result["reused_session"] is False
+    assert result["reason"] == "missing_or_invalid_session"
+    assert opened == [result["login_url"]]
+
+
+@pytest.mark.asyncio
+async def test_gateway_auto_opens_sso_when_session_missing(tmp_path, monkeypatch):
+    config = AbapDevConfig(system_url="https://example.abap.local", session_path=tmp_path / "session.json")
+    opened: list[str] = []
+    monkeypatch.setattr("webbrowser.open", opened.append)
+
+    with pytest.raises(AuthorizationError, match="Opened the ABAP ADT SSO login URL") as exc_info:
+        await AbapDevGateway(config).search_objects(SYSTEM_USER, "ZCL_TEST")
+
+    assert opened
+    assert "login_url=" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_gateway_auto_opens_sso_when_session_expired(tmp_path, monkeypatch):
+    config = AbapDevConfig(system_url="https://example.abap.local", session_path=tmp_path / "session.json")
+    BrowserSsoSessionManager(config).save_session({"SESSION": "abc"})
+    opened: list[str] = []
+    monkeypatch.setattr("webbrowser.open", opened.append)
+    respx.get("https://example.abap.local/sap/bc/adt/discovery").mock(return_value=Response(401, text="login"))
+
+    with pytest.raises(AuthorizationError, match="has expired"):
+        await AbapDevGateway(config).connect(SYSTEM_USER)
+
+    assert opened
 
 
 def test_adt_read_path_supports_rap_and_cds_types(tmp_path):
@@ -760,6 +828,20 @@ async def test_adt_unauthorized_reports_relogin(tmp_path):
     respx.get("https://example.abap.local/sap/bc/adt/discovery").mock(return_value=Response(401, text="login"))
 
     with pytest.raises(AuthorizationError, match="abap_adt_login"):
+        await AdtConnector(config, manager.load_session()).discovery()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_adt_redirect_reports_relogin(tmp_path):
+    config = AbapDevConfig(system_url="https://example.abap.local", session_path=tmp_path / "session.json")
+    manager = BrowserSsoSessionManager(config)
+    manager.save_session({"SESSION": "abc"})
+    respx.get("https://example.abap.local/sap/bc/adt/discovery").mock(
+        return_value=Response(302, headers={"location": "https://example.abap-web.local/login"})
+    )
+
+    with pytest.raises(AuthorizationError, match="redirected"):
         await AdtConnector(config, manager.load_session()).discovery()
 
 
