@@ -25,7 +25,6 @@
   - `stdio_server.py`：STDIO Transport 入口，适合 Kiro 等 IDE 启动。
   - `callback.py`：共享的 SSO 回调路由。
   - `auth/`、`connectors/`、`services/`：认证、ADT 请求和工具编排。
-- `tests/`：pytest 测试套件，仅开发时需要。
 - `sap-mcp.example.yaml`：安全的示例配置。
 - `sap-mcp.yaml`：本地私有配置，保存 `abap_dev.system_url` 和写入权限等设置。
 - `.sap-mcp-session.json`：本地浏览器 SSO 会话文件，不要提交或分享。
@@ -107,9 +106,3 @@ STDIO 模式会同时启动一个本地 SSO 回调监听器，监听地址来自
 3. `/logon/success` 回调保存 `.sap-mcp-session.json`。
 4. 调用 `abap_adt_connect` 验证连接。
 5. 建议先读后写，只有确实需要时再开启 `allow_write` 和 `allow_activate`。
-
-## 测试
-
-```powershell
-python -m pytest -q
-```

@@ -21,7 +21,7 @@ Install dependencies:
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\pip install -e ".[test]"
+.\.venv\Scripts\pip install -e .
 ```
 
 ## Project Layout
@@ -31,11 +31,10 @@ python -m venv .venv
   - `stdio_server.py` - STDIO transport entrypoint for IDEs such as Kiro.
   - `callback.py` - shared browser SSO callback routes.
   - `auth/`, `connectors/`, `services/` - authentication, ADT HTTP calls, and tool orchestration.
-- `tests/` - pytest test suite only; not needed at runtime.
 - `sap-mcp.example.yaml` - safe example config.
 - `sap-mcp.yaml` - local private config; stores `abap_dev.system_url` and write permissions.
 - `.sap-mcp-session.json` - local browser SSO session file; do not commit or share.
-- `.venv/`, `.pytest_cache/`, `__pycache__/`, `*.egg-info/` - generated local artifacts; safe to delete and recreate.
+- `.venv/`, `__pycache__/`, `*.egg-info/` - generated local artifacts; safe to delete and recreate.
 
 ## HTTP Endpoints
 
@@ -135,9 +134,3 @@ uvicorn sap_mcp.server:app --host 127.0.0.1 --port 8000
 3. The callback at `/logon/success` stores the ADT reentrance session locally.
 4. Call `abap_adt_connect`.
 5. Use read tools first, then enable write and activate only when needed.
-
-## Tests
-
-```powershell
-python -m pytest -q
-```
