@@ -4,17 +4,14 @@ import asyncio
 import xml.etree.ElementTree as ET
 from typing import Any
 
+from sap_mcp.connectors.core.registry import ADT_BASE_PATH
 from sap_mcp.errors import ValidationError
 
 
 class AdtQualityMixin:
     async def run_unit_tests(
-        self,
-        objects: list[dict[str, str]] | None,
-        packages: list[str] | None,
-        include_subpackages: bool,
-        title: str,
-        wait_seconds: int,
+        self, objects: list[dict[str, str]] | None, packages: list[str] | None,
+        include_subpackages: bool, title: str, wait_seconds: int,
     ) -> dict[str, Any]:
         body = (
             '<?xml version="1.0" encoding="UTF-8"?>'
@@ -30,8 +27,7 @@ class AdtQualityMixin:
             "</aunit:run>"
         )
         response = await self._request(
-            "POST",
-            "/sap/bc/adt/api/abapunit/runs",
+            "POST", f"{ADT_BASE_PATH}/api/abapunit/runs",
             content=body.encode("utf-8"),
             headers={"Content-Type": "application/vnd.sap.adt.api.abapunit.run.v1+xml; charset=utf-8"},
             accept="application/vnd.sap.adt.api.abapunit.run-status.v1+xml, application/xml, */*",
@@ -40,10 +36,7 @@ class AdtQualityMixin:
         result = {"started": True, "kind": "abap_unit", "run_uri": run_uri, "status_code": response.status_code}
         if wait_seconds > 0 and run_uri:
             result["run"] = await self._wait_for_run_result(
-                run_uri,
-                "application/vnd.sap.adt.api.abapunit.run-status.v1+xml, application/xml, */*",
-                wait_seconds,
-            )
+                run_uri, "application/vnd.sap.adt.api.abapunit.run-status.v1+xml, application/xml, */*", wait_seconds)
             result_uri = result["run"].get("result_uri")
             if result_uri:
                 result["result"] = await self.get_unit_test_result(result_uri)
@@ -51,42 +44,23 @@ class AdtQualityMixin:
 
     async def get_unit_test_run(self, run_uri: str) -> dict[str, Any]:
         response = await self._request(
-            "GET",
-            self._adt_api_path(run_uri),
+            "GET", self._adt_api_path(run_uri),
             accept="application/vnd.sap.adt.api.abapunit.run-status.v1+xml, application/xml, */*",
         )
         parsed = self._parse_run_status(response.text, "abap_unit")
-        return {
-            **parsed,
-            "kind": "abap_unit",
-            "run_uri": self._adt_api_path(run_uri),
-            "status_code": response.status_code,
-            "raw_xml": response.text,
-        }
+        return {**parsed, "kind": "abap_unit", "run_uri": self._adt_api_path(run_uri), "status_code": response.status_code, "raw_xml": response.text}
 
     async def get_unit_test_result(self, result_uri: str) -> dict[str, Any]:
         response = await self._request(
-            "GET",
-            self._adt_api_path(result_uri),
+            "GET", self._adt_api_path(result_uri),
             accept="application/vnd.sap.adt.api.junit.run-result.v1+xml, application/xml, */*",
         )
         summary = self._parse_junit_result(response.text)
-        return {
-            "kind": "abap_unit",
-            "result_uri": self._adt_api_path(result_uri),
-            "status_code": response.status_code,
-            "summary": summary,
-            "raw_xml": response.text,
-        }
+        return {"kind": "abap_unit", "result_uri": self._adt_api_path(result_uri), "status_code": response.status_code, "summary": summary, "raw_xml": response.text}
 
     async def run_atc_checks(
-        self,
-        objects: list[dict[str, str]] | None,
-        packages: list[str] | None,
-        include_subpackages: bool,
-        check_variant: str | None,
-        configuration: str | None,
-        wait_seconds: int,
+        self, objects: list[dict[str, str]] | None, packages: list[str] | None,
+        include_subpackages: bool, check_variant: str | None, configuration: str | None, wait_seconds: int,
     ) -> dict[str, Any]:
         attrs = []
         if check_variant:
@@ -100,9 +74,7 @@ class AdtQualityMixin:
             "</atc:runparameters>"
         )
         response = await self._request(
-            "POST",
-            "/sap/bc/adt/api/atc/runs",
-            params={"clientWait": "false"},
+            "POST", f"{ADT_BASE_PATH}/api/atc/runs", params={"clientWait": "false"},
             content=body.encode("utf-8"),
             headers={"Content-Type": "application/vnd.sap.atc.run.parameters.v1+xml; charset=utf-8"},
             accept="application/vnd.sap.atc.run.v1+xml, application/xml, */*",
@@ -110,11 +82,7 @@ class AdtQualityMixin:
         run_uri = response.headers.get("location", "")
         result = {"started": True, "kind": "atc", "run_uri": run_uri, "status_code": response.status_code}
         if wait_seconds > 0 and run_uri:
-            result["run"] = await self._wait_for_run_result(
-                run_uri,
-                "application/vnd.sap.atc.run.v1+xml, application/xml, */*",
-                wait_seconds,
-            )
+            result["run"] = await self._wait_for_run_result(run_uri, "application/vnd.sap.atc.run.v1+xml, application/xml, */*", wait_seconds)
             result_uri = result["run"].get("result_uri")
             if result_uri:
                 result["result"] = await self.get_atc_result(result_uri)
@@ -122,45 +90,25 @@ class AdtQualityMixin:
 
     async def get_atc_run(self, run_uri: str) -> dict[str, Any]:
         response = await self._request(
-            "GET",
-            self._adt_api_path(run_uri),
+            "GET", self._adt_api_path(run_uri),
             accept="application/vnd.sap.atc.run.v1+xml, application/xml, */*",
         )
         parsed = self._parse_run_status(response.text, "atc")
-        return {
-            **parsed,
-            "kind": "atc",
-            "run_uri": self._adt_api_path(run_uri),
-            "status_code": response.status_code,
-            "raw_xml": response.text,
-        }
+        return {**parsed, "kind": "atc", "run_uri": self._adt_api_path(run_uri), "status_code": response.status_code, "raw_xml": response.text}
 
     async def get_atc_result(self, result_uri: str) -> dict[str, Any]:
         response = await self._request(
-            "GET",
-            self._adt_api_path(result_uri),
+            "GET", self._adt_api_path(result_uri),
             accept="application/vnd.sap.atc.checkstyle.v1+xml, application/xml, */*",
         )
         summary = self._parse_checkstyle_result(response.text)
-        return {
-            "kind": "atc",
-            "result_uri": self._adt_api_path(result_uri),
-            "status_code": response.status_code,
-            "summary": summary,
-            "raw_xml": response.text,
-        }
+        return {"kind": "atc", "result_uri": self._adt_api_path(result_uri), "status_code": response.status_code, "summary": summary, "raw_xml": response.text}
 
-    def _object_set_xml(
-        self,
-        objects: list[dict[str, str]] | None,
-        packages: list[str] | None,
-        include_subpackages: bool,
-    ) -> str:
+    def _object_set_xml(self, objects: list[dict[str, str]] | None, packages: list[str] | None, include_subpackages: bool) -> str:
         object_items = objects or []
         package_items = packages or []
         if not object_items and not package_items:
             raise ValidationError("At least one object or package is required")
-
         sets: list[str] = []
         for package in package_items:
             package_name = package.strip().upper()
@@ -171,30 +119,23 @@ class AdtQualityMixin:
             sets.append(
                 f'<osl:set xsi:type="osl:packageSet">'
                 f'<osl:package includeSubpackages="{include}" name="{self._xml_escape(package_name)}"/>'
-                "</osl:set>"
-            )
-
+                f"</osl:set>")
         object_xml: list[str] = []
         for item in object_items:
             object_type = (item.get("type") or item.get("object_type") or "").strip().upper()
             object_name = (item.get("name") or "").strip().upper()
             if not object_type or not object_name:
                 raise ValidationError("Each object must contain name and type/object_type")
-            object_xml.append(
-                f'<osl:object name="{self._xml_escape(object_name)}" type="{self._xml_escape(object_type)}"/>'
-            )
+            object_xml.append(f'<osl:object name="{self._xml_escape(object_name)}" type="{self._xml_escape(object_type)}"/>')
         if object_xml:
             sets.append(f'<osl:set xsi:type="osl:flatObjectSet">{"".join(object_xml)}</osl:set>')
-
         if not sets:
             raise ValidationError("At least one non-empty object or package is required")
         return (
             '<osl:objectSet xsi:type="unionSet" '
             'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
             'xmlns:osl="http://www.sap.com/api/osl">'
-            f'{"".join(sets)}'
-            "</osl:objectSet>"
-        )
+            f'{"".join(sets)}</osl:objectSet>')
 
     async def _wait_for_run_result(self, run_uri: str, accept: str, wait_seconds: int) -> dict[str, Any]:
         deadline = asyncio.get_running_loop().time() + max(1, min(wait_seconds, 300))
@@ -202,13 +143,7 @@ class AdtQualityMixin:
         while True:
             response = await self._request("GET", self._adt_api_path(run_uri), accept=accept)
             kind = "abap_unit" if "/abapunit/" in run_uri else "atc"
-            last = {
-                **self._parse_run_status(response.text, kind),
-                "kind": kind,
-                "run_uri": self._adt_api_path(run_uri),
-                "status_code": response.status_code,
-                "raw_xml": response.text,
-            }
+            last = {**self._parse_run_status(response.text, kind), "kind": kind, "run_uri": self._adt_api_path(run_uri), "status_code": response.status_code, "raw_xml": response.text}
             if last.get("result_uri") or asyncio.get_running_loop().time() >= deadline:
                 return last
             await asyncio.sleep(2)
@@ -218,51 +153,34 @@ class AdtQualityMixin:
             root = ET.fromstring(text)
         except ET.ParseError:
             return {"status": "unknown", "finished": False, "result_uri": None}
-
-        progress = None
-        phases: list[dict[str, str]] = []
-        result_uri = None
+        progress, phases, result_uri = None, [], None
         for element in root.iter():
             tag = element.tag.rsplit("}", 1)[-1]
             if tag == "progress":
-                progress = {self._clean_xml_name(key): value for key, value in element.attrib.items()}
+                progress = {self._clean_xml_name(k): v for k, v in element.attrib.items()}
             elif tag == "phase":
-                phases.append({self._clean_xml_name(key): value for key, value in element.attrib.items()})
+                phases.append({self._clean_xml_name(k): v for k, v in element.attrib.items()})
             elif tag == "link":
                 href = element.attrib.get("href", "")
                 rel = element.attrib.get("rel", "")
                 if "/results/" in href or "result" in rel:
                     result_uri = self._adt_api_path(href)
-
         status = root.attrib.get("status") or (progress or {}).get("status") or (progress or {}).get("description") or "unknown"
         normalized = status.upper().replace(" ", "_")
-        finished = normalized in {"FINISHED", "COMPLETED"} or (
-            bool(phases) and all(phase.get("status", "").lower() == "completed" for phase in phases)
-        )
-        return {
-            "status": status,
-            "finished": finished,
-            "result_uri": result_uri,
-            "progress": progress or {},
-            "phases": phases,
-        }
+        finished = normalized in {"FINISHED", "COMPLETED"} or (bool(phases) and all(p.get("status", "").lower() == "completed" for p in phases))
+        return {"status": status, "finished": finished, "result_uri": result_uri, "progress": progress or {}, "phases": phases}
 
     def _parse_junit_result(self, text: str) -> dict[str, Any]:
         try:
             root = ET.fromstring(text)
         except ET.ParseError:
             return {"parse_error": True, "tests": 0, "failures": 0, "errors": 0, "skipped": 0, "testcases": []}
-
         summary = {
-            "tests": self._xml_int(root.attrib.get("tests")),
-            "asserts": self._xml_int(root.attrib.get("asserts")),
-            "failures": self._xml_int(root.attrib.get("failures")),
-            "errors": self._xml_int(root.attrib.get("errors")),
-            "skipped": self._xml_int(root.attrib.get("skipped")),
-            "time": root.attrib.get("time"),
-            "testcases": [],
+            "tests": self._xml_int(root.attrib.get("tests")), "asserts": self._xml_int(root.attrib.get("asserts")),
+            "failures": self._xml_int(root.attrib.get("failures")), "errors": self._xml_int(root.attrib.get("errors")),
+            "skipped": self._xml_int(root.attrib.get("skipped")), "time": root.attrib.get("time"), "testcases": [],
         }
-        cases: list[dict[str, Any]] = []
+        cases = []
         for testcase in root.iter():
             if testcase.tag.rsplit("}", 1)[-1] != "testcase":
                 continue
@@ -270,21 +188,9 @@ class AdtQualityMixin:
             for child in testcase:
                 tag = child.tag.rsplit("}", 1)[-1]
                 if tag in {"failure", "error", "skipped"}:
-                    findings.append(
-                        {
-                            "type": tag,
-                            "message": child.attrib.get("message", ""),
-                            "text": (child.text or "").strip(),
-                        }
-                    )
+                    findings.append({"type": tag, "message": child.attrib.get("message", ""), "text": (child.text or "").strip()})
             if findings:
-                cases.append(
-                    {
-                        "classname": testcase.attrib.get("classname", ""),
-                        "name": testcase.attrib.get("name", ""),
-                        "findings": findings,
-                    }
-                )
+                cases.append({"classname": testcase.attrib.get("classname", ""), "name": testcase.attrib.get("name", ""), "findings": findings})
         summary["testcases"] = cases[:50]
         return summary
 
@@ -293,10 +199,7 @@ class AdtQualityMixin:
             root = ET.fromstring(text)
         except ET.ParseError:
             return {"parse_error": True, "files": 0, "issues": 0, "severity_counts": {}, "findings": []}
-
-        severity_counts: dict[str, int] = {}
-        findings: list[dict[str, str]] = []
-        file_count = 0
+        severity_counts, findings, file_count = {}, [], 0
         for file_element in root.iter():
             if file_element.tag.rsplit("}", 1)[-1] != "file":
                 continue
@@ -305,23 +208,10 @@ class AdtQualityMixin:
             for error in file_element:
                 if error.tag.rsplit("}", 1)[-1] != "error":
                     continue
-                severity = error.attrib.get("severity", "unknown")
-                severity_counts[severity] = severity_counts.get(severity, 0) + 1
-                findings.append(
-                    {
-                        "file": file_name,
-                        "line": error.attrib.get("line", ""),
-                        "severity": severity,
-                        "source": error.attrib.get("source", ""),
-                        "message": error.attrib.get("message", ""),
-                    }
-                )
-        return {
-            "files": file_count,
-            "issues": len(findings),
-            "severity_counts": severity_counts,
-            "findings": findings[:100],
-        }
+                sev = error.attrib.get("severity", "unknown")
+                severity_counts[sev] = severity_counts.get(sev, 0) + 1
+                findings.append({"file": file_name, "line": error.attrib.get("line", ""), "severity": sev, "source": error.attrib.get("source", ""), "message": error.attrib.get("message", "")})
+        return {"files": file_count, "issues": len(findings), "severity_counts": severity_counts, "findings": findings[:100]}
 
     def _xml_int(self, value: str | None) -> int:
         try:

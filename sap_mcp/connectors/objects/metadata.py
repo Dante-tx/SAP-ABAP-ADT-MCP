@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 from typing import Any
+from urllib.parse import unquote
 
 from sap_mcp.errors import ValidationError
 
@@ -19,17 +20,10 @@ class AdtMetadataMixin:
         requested_name: str | None,
     ) -> dict[str, Any]:
         result: dict[str, Any] = {
-            "uri": path,
-            "object_type": requested_type,
-            "type": requested_type,
-            "name": requested_name,
-            "package": None,
-            "description": None,
-            "etag": etag,
-            "content_type": content_type,
-            "status_code": status_code,
-            "links": [],
-            "source_parts": [],
+            "uri": path, "object_type": requested_type, "type": requested_type,
+            "name": requested_name, "package": None, "description": None,
+            "etag": etag, "content_type": content_type, "status_code": status_code,
+            "links": [], "source_parts": [],
         }
         if not text.strip():
             return result
@@ -39,7 +33,6 @@ class AdtMetadataMixin:
             result["parse_error"] = True
             result["raw_excerpt"] = text[:500]
             return result
-
         root_attributes = self._clean_attributes(root.attrib)
         result["attributes"] = root_attributes
         result["name"] = root_attributes.get("name") or requested_name
@@ -73,14 +66,13 @@ class AdtMetadataMixin:
 
     def _metadata_links(self, root: ET.Element, base_path: str) -> list[dict[str, str]]:
         links: list[dict[str, str]] = []
-        base = f"{base_path.rstrip('/')}/"
         for element in root.iter():
             if element.tag.rsplit("}", 1)[-1] != "link":
                 continue
             item = self._clean_attributes(element.attrib)
             href = item.get("href")
             if href:
-                item["href"] = self._adt_relative_url(base, href)
+                item["href"] = self._adt_relative_url(base_path, href)
             links.append(item)
         return links
 
@@ -92,23 +84,17 @@ class AdtMetadataMixin:
             href = link_attributes.get("href")
             if not href:
                 return
-            uri = self._adt_relative_url(f"{base_path.rstrip('/')}/", href)
+            uri = self._metadata_source_uri(base_path, href)
             if uri in seen:
                 return
             seen.add(uri)
             etag = link_attributes.get("etag")
-            parts.append(
-                {
-                    "include_type": include_type,
-                    "uri": uri,
-                    "etag": etag,
-                    "content_type": link_attributes.get("type"),
-                    "source_kind": "source",
-                    "round_trippable": True,
-                    "writable_uri": uri,
-                    "writable_etag": etag,
-                }
-            )
+            parts.append({
+                "include_type": include_type, "uri": uri, "etag": etag,
+                "content_type": link_attributes.get("type"),
+                "source_kind": "source", "round_trippable": True,
+                "writable_uri": uri, "writable_etag": etag,
+            })
 
         for element in root.iter():
             attributes = self._clean_attributes(element.attrib)
@@ -136,6 +122,33 @@ class AdtMetadataMixin:
 
         order = {"main": 0, "definitions": 1, "implementations": 2, "macros": 3, "testclasses": 4}
         return sorted(parts, key=lambda item: order.get(item["include_type"], 99))
+
+    def _metadata_source_uri(self, base_path: str, href: str) -> str:
+        if href.startswith("/"):
+            return self._normalize_duplicate_source_href(base_path, self._adt_relative_url(href))
+        if href == "source/main" or href.startswith("source/main"):
+            return self._adt_relative_url(base_path, href)
+        if "/source/main" in href and href.startswith("./"):
+            return self._normalize_duplicate_source_href(base_path, self._adt_relative_url(base_path, href[2:]))
+        return self._normalize_duplicate_source_href(
+            base_path,
+            self._adt_relative_url(f"{base_path.rstrip('/')}/", href),
+        )
+
+    def _normalize_duplicate_source_href(self, base_path: str, uri: str) -> str:
+        base = base_path.rstrip("/")
+        if not uri.lower().startswith(f"{base.lower()}/"):
+            return uri
+        remainder = uri[len(base) + 1:]
+        if remainder.lower() != "source/main" and not remainder.lower().endswith("/source/main"):
+            return uri
+        duplicated_name, source_suffix = remainder.split("/", 1)
+        if source_suffix.lower() != "source/main":
+            return uri
+        base_name = base.rsplit("/", 1)[-1]
+        if unquote(duplicated_name).upper() != unquote(base_name).upper():
+            return uri
+        return f"{base}/source/main"
 
     def _metadata_link_is_source(self, attributes: dict[str, str]) -> bool:
         href = attributes.get("href", "")

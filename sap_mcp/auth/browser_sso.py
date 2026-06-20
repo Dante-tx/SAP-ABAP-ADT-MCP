@@ -151,6 +151,15 @@ class BrowserSsoSessionManager:
                 cookies[name] = value
         return self.save_session(cookies, headers)
 
+    def clear_session(self) -> dict[str, Any]:
+        path = self.config.session_path
+        existed = path.exists()
+        if existed:
+            path.unlink()
+        self._last_auto_login_opened_at = 0.0
+        self._last_auto_login_url = None
+        return {"cleared": existed, "session_path": str(path)}
+
     def save_reentrance_callback(self, params: dict[str, str], headers: dict[str, str] | None = None) -> dict[str, Any]:
         session = BrowserSession(
             system_url=self.system_url(),
@@ -164,13 +173,13 @@ class BrowserSsoSessionManager:
             "saved": True,
             "session_path": str(self.config.session_path),
             "reentrance_fields": sorted(params),
-            "next_step": "Run abap_adt_connect to validate whether the ADT login result is accepted.",
+            "next_step": 'Run abap_adt_session(action="validate") to validate whether the ADT login result is accepted.',
         }
 
     def load_session(self) -> BrowserSession:
         path = self.config.session_path
         if not path.exists():
-            raise ConfigError("No local SSO session found. Run abap_adt_login and import cookies first.")
+            raise ConfigError('No local SSO session found. Run abap_adt_session(action="login") and import cookies first.')
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:

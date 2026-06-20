@@ -1,6 +1,8 @@
 ﻿.env
 .sap-mcp-session.json
 sap-mcp.yaml
+sap-mcp-*.yaml
+!sap-mcp.example.yaml
 logs/
 __pycache__/
 *.py[cod]
@@ -9,3 +11,4 @@ __pycache__/
 .pytest_cache/
 tests/
 test_*.py
+_fix_publish.py

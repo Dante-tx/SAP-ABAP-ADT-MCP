@@ -9,6 +9,14 @@ GENERATOR_SCHEMA_ACCEPT = "application/vnd.sap.adt.repository.generator.schema.v
 GENERATOR_CONTENT_ACCEPT = "application/vnd.sap.adt.repository.generator.content.v1+json, application/json, */*"
 
 
+# ETag 412 retry configuration
+MAX_ETAG_RETRIES = 2
+
+ADT_SESSION_HEADER = "X-sap-adt-sessiontype"
+ADT_SESSION_STATEFUL = "stateful"
+ADT_SESSION_STATELESS = "stateless"
+ADT_SESSION_CONTEXT_COOKIE_PREFIXES = ("sap-contextid",)
+
 CREATABLE_OBJECT_TYPES: dict[str, dict[str, Any]] = {
     "PROG/P": {
         "name": "Program",
@@ -156,11 +164,15 @@ CREATABLE_ALIASES = {
 
 
 GENERATOR_ALIASES = {
-    "ui-service": "uiservice",
-    "x-ui-service": "uiservice",
-    "uiservice": "uiservice",
-    "webapi-service": "webapiservice",
-    "webapiservice": "webapiservice",
+    "ui-service": "ui-service",
+    "uiservice": "ui-service",
+    "ui": "ui-service",
+    "x-ui-service": "x-ui-service",
+    "xuiservice": "x-ui-service",
+    "xui": "x-ui-service",
+    "webapi-service": "webapi-service",
+    "webapiservice": "webapi-service",
+    "webapi": "webapi-service",
 }
 
 

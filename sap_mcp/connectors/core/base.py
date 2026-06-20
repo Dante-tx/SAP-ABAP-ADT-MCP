@@ -6,12 +6,13 @@ import xml.etree.ElementTree as ET
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-from sap_mcp.connectors.adt_registry import ADT_PATH_REGISTRATIONS, AdtPathRegistration
-from sap_mcp.connectors.official.constants import CREATABLE_ALIASES, CREATABLE_OBJECT_TYPES
+from sap_mcp.connectors.core.paths import coerce_adt_path
+from sap_mcp.connectors.core.registry import ADT_PATH_REGISTRATIONS, AdtPathRegistration
+from sap_mcp.connectors.core.constants import CREATABLE_ALIASES, CREATABLE_OBJECT_TYPES
 from sap_mcp.errors import ValidationError
 
 
-class OfficialBaseMixin:
+class BaseMixin:
     def _destination_id(self) -> str:
         host = urlparse(self.session.system_url).hostname or "default"
         match = re.search(r"\b([A-Z0-9]{3})\b", host.upper())
@@ -32,15 +33,20 @@ class OfficialBaseMixin:
         requested = object_type.upper()
         if requested in CREATABLE_OBJECT_TYPES:
             return requested
-        return CREATABLE_ALIASES.get(requested, "")
+        alias = CREATABLE_ALIASES.get(requested)
+        if alias:
+            return alias
+        return CREATABLE_ALIASES.get(requested.split("/", 1)[0], "")
 
     def _object_content(self, object_content: str) -> dict[str, Any]:
+        if isinstance(object_content, dict):
+            return object_content
         try:
             content = json.loads(object_content)
         except json.JSONDecodeError as exc:
-            raise ValidationError("objectContent must be a JSON object string") from exc
+            raise ValidationError("object_content must be a JSON object string") from exc
         if not isinstance(content, dict):
-            raise ValidationError("objectContent must be a JSON object string")
+            raise ValidationError("object_content must be a JSON object string")
         return content
 
     def _required_content(self, content: dict[str, Any], *keys: str) -> str:
@@ -48,7 +54,8 @@ class OfficialBaseMixin:
             value = content.get(key)
             if value is not None and str(value).strip():
                 return str(value).strip()
-        raise ValidationError(f"objectContent requires one of: {', '.join(keys)}")
+        available = ", ".join(sorted(content)) or "none"
+        raise ValidationError(f"object_content requires one of: {', '.join(keys)}. Available fields: {available}")
 
     def _validate_object_name(self, name: str, max_len: int) -> None:
         if not name.strip():
@@ -88,16 +95,8 @@ class OfficialBaseMixin:
         )
 
     def _coerce_adt_path(self, uri: str) -> str:
-        value = uri.strip()
-        parsed = urlparse(value)
-        if parsed.scheme and parsed.path:
-            value = parsed.path
-        if "/sap/bc/adt/" in value and not value.startswith("/sap/bc/adt/"):
-            value = value[value.index("/sap/bc/adt/") :]
-        value = unquote(value.split("#", 1)[0].split("?", 1)[0])
-        if not value.startswith("/sap/bc/adt/"):
-            raise ValidationError("URI must contain an ADT /sap/bc/adt path")
-        return value
+        """Normalize a raw URI to an ADT path (delegates to shared utility)."""
+        return coerce_adt_path(uri)
 
     def _object_ref_from_any_uri(self, uri: str) -> dict[str, str]:
         path = self._coerce_adt_path(uri)
@@ -116,5 +115,5 @@ class OfficialBaseMixin:
         prefix, _, _suffix = registration.root_template.partition("{name}")
         if not path.lower().startswith(prefix.lower()):
             return None
-        name = path[len(prefix) :].split("/", 1)[0]
+        name = path[len(prefix):].split("/", 1)[0]
         return unquote(name).upper() if name else None
