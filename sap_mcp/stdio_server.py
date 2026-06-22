@@ -19,7 +19,7 @@ def _callback_host_port(config: AppConfig) -> tuple[str, int]:
 def start_callback_server(config: AppConfig) -> None:
     host, port = _callback_host_port(config)
     server_config = uvicorn.Config(
-        create_callback_app(config, client_name="Kiro"),
+        create_callback_app(config, client_name="IDE"),
         host=host,
         port=port,
         log_level="warning",
